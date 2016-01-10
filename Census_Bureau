@@ -1,0 +1,114 @@
+# In this part, I prepared for the data that would be uploaded to Census Bureau website.
+
+# Basic idea: all the locations put into Geocoding have zipcode. The rule they are given zipcode is:
+# 1, If the location and address are same, give the zipcode of address to location.
+# 2, If the location and address are different, give 06511 to location. 
+# (It is possible that location may have other zipcode. However, seen from the result, it works OK.)
+
+# 85 properties are not located:
+# 1, No building number in location & location and address are different.
+# 2, No building number in location $ location and address are same & Address has building number.
+# 3, No building number in location & location and address are same & No building number in address.
+# 4, Has building number in location & Zipcode from address does not work.
+
+# I aknowledge there are still some properties that can be located (such as 2nd case in *Basic Idea*).
+# This algorithm can be improved greatly.
+
+start <- date()
+files <- dir("newdata", full.names=TRUE)
+rawpids <- as.numeric(gsub("newdata/|.html", "", files)) # "|"means"or"
+rawpids <- sort(rawpids)
+N <- max(rawpids, na.rm = TRUE)
+
+set.seed(1)
+these <- sample(1:27307, 1000) 
+
+#startpid <- 1 
+#endpid <- 1000 for later steps
+
+location <- rep(NA, N)
+totval <- rep(NA, N)
+address <- rep(NA, N)
+pid <- rep(NA, N)
+
+for (i in these) {     # (i in startpid:endpid) in later steps
+  # Here, we are processing Parcel ID (j) given by rawpids[i]
+  if (!is.na(rawpids[i])) {
+    j <- rawpids[i] 
+    x <- scan(files[i], what="", sep="\n", quiet=TRUE)
+  
+    tmp <- x[grep("MainContent_lblGenAppraisal\"", x)]
+    totval[j] <- as.numeric(gsub("<[^<>]*>|,|\\$|\\s", "", tmp))
+  
+    tmp <- x[grep("MainContent_lblLocation", x)]
+    location[j] <- paste(gsub("^\\s*|<[^<>]*>", "", tmp), sep = "")
+  
+    tmp <- x[grep("MainContent_lblAddr1\"", x)]
+    address[j] <- gsub("^\\s*|<[^<>]*>|Address", "", tmp)
+    
+    pid[j] <- j
+  }
+}
+
+all <- data.frame(pid = pid, location=location, totval=totval, address=address,
+                  stringsAsFactors = FALSE)
+
+# Taking out observations in *all* with NA
+data1000 <- all[complete.cases(all),]
+
+write.table(data1000, "VAinformation.csv", row.names=FALSE, col.names=FALSE, sep= ",")
+
+####################Prepare for Geocoding Input#############################
+
+# Prepare the required format for Geocoding
+dataid <- 1:length(data1000$location)
+datalocation <- data1000$location
+datacity <- rep("New Haven", length(data1000$location))
+datastate <- rep("CT",length(data1000$location))
+datazipcode <- rep("06511", length(data1000$location))
+
+# If location and address are the same, use the zipcode in address instaed of 06511
+
+matchyes <- pmatch(data1000$location, data1000$address)
+library(stringr)
+for (i in 1:length(matchyes)) {
+  if (!is.na(matchyes[i])) {
+    datazipcode[i] <- str_sub(data1000$address[i],-6,-1)
+  }
+}
+
+data1000_csv <- data.frame(dataid = dataid, 
+                           datalocation = datalocation, 
+                           datacity = datacity, 
+                           datastate=datastate, 
+                           datazipcode = datazipcode )
+
+write.table(data1000_csv, "GeocoderUpload.csv", row.names=FALSE, col.names=FALSE, sep= ",")
+
+######################Got results from GeocodeResults.csv###############################
+
+# Read lontitude and longitude from GeocodeResults.csv
+geocodedata <- read.csv("GeocodeResults.csv", sep = ",", header = FALSE, as.is=TRUE, stringsAsFactors = FALSE)
+geocodedata <- (geocodedata[order(geocodedata$V1),])
+
+# Give longitude and latitude to data1000
+data1000 <- read.csv("VAinformation.csv", sep = ",", header = FALSE, as.is=TRUE, stringsAsFactors = FALSE)
+geo <- strsplit(geocodedata$V6, split = ",")
+longitude <- rep(0, length(geo))
+latitude <- rep(0, length(geo))
+for (i in 1:length(geo)) {
+  longitude[i] <- as.numeric(geo[[i]][1])
+  latitude[i] <- as.numeric(geo[[i]][2])
+}
+data1000[,"longitude"]  <- longitude
+data1000[,"latitude"]  <- latitude
+colnames(data1000)[1] <- "pid"
+colnames(data1000)[2] <- "location"
+colnames(data1000)[3] <- "totval"
+colnames(data1000)[4] <- "address"
+
+write.csv(data1000, "tc458.csv", row.names = FALSE)
+
+start
+date()
+
