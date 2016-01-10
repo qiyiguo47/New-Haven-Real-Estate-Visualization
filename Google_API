@@ -1,0 +1,108 @@
+# The code is based on one of my classmates' work.
+# In this part, I used GoogleAPI to get longitute and latitude for each property.
+
+library(ggmap)
+# Helpful debugging option
+options(warn=1)
+
+start <- date()
+
+# Determine the html files to be read
+files <- dir("newdata", full.names=TRUE)
+rawpids <- as.numeric(gsub("newdata/|.html", "", files))
+N <- max(rawpids, na.rm = TRUE)
+
+startFile <- 1
+endFile <- 1000
+
+queryLimit <- FALSE
+
+# Create the empty data frame
+empty <- rep(NA, N)
+data <- data.frame(pid = empty, location = empty, formattedAddress = empty,
+                   longitude = empty, latitude = empty, zipcode = empty)
+
+# Gets the zipcode from the json object
+getzipcode = function(addressComps) {
+  len = length(addressComps)
+  
+  # Search for the postal_code address_component
+  # It is either the last or second to last address_component
+  if(addressComps[[len]]$types == "postal_code") {
+    addressComps[[len]]$long_name
+  }
+  else if(addressComps[[len-1]]$types == "postal_code") {
+    addressComps[[len-1]]$long_name
+  }
+  else {
+    # Return NA if it is not found
+    NA
+  }
+}
+
+for (i in startFile:endFile) {
+  # Here, we are processing Parcel ID (j) given by rawpids[i]
+  j <- rawpids[i] # Position in the new data vectors
+  x <- scan(files[i], what="", sep="\n", quiet=TRUE)
+  
+  data$pid[j] <- j
+  
+  tmp <- x[grep("MainContent_lblLocation", x)]
+  data$location[j] <- gsub("^\\s*|<[^<>]*>", "", tmp)
+  
+  # Simple statement to prevent repetitive OVER_QUERY_LIMIT error
+  if(!queryLimit) {
+    # Removes apartment numbering for geocoding
+    tmp <- gsub("#.*", "", data$location[j])
+    
+    geo <- geocode(paste(tmp, ", New Haven, CT"),
+                   output = "all", source = "google", override_limit = TRUE)
+    
+    # Check the status of the query
+    if(geo$status == "OK") {
+      results <- geo$results[[1]]
+      
+      # Check that the address was valid (associated with a street address)
+      if(results$types == "street_address") {
+        data$formattedAddress[j] <- results$formatted_address
+        data$longitude[j] <- results$geometry$location$lng
+        data$latitude[j] <- results$geometry$location$lat
+        data$zipcode[j] <- getzipcode(results$address_components)
+      }
+      else {
+        print(paste("Not a valid street address: ", results$formatted_address))
+      }
+    }
+    else {
+      print(paste("Geocode error code: ", geo$status))
+      
+      if(geo$status == "OVER_QUERY_LIMIT") {
+        queryLimit = TRUE
+      }
+    }
+  }
+}
+
+# Extract the real information from data
+entries <- data[which(!is.na(data$location)),]
+
+# Get geographic limits of the addresses
+box <- make_bbox(entries$longitude, entries$latitude)
+
+# Get a colored google map of the area
+# Plot the map and the addresses (warnings thrown for points outside the map)
+map <- get_map(location = box, maptype = "terrain", source = "google", 
+               color = "color", zoom = 12, scale = 2)
+ggmap(map) + geom_point(aes(x = longitude, y = latitude), data=entries)
+
+# Use a greater zoom
+map <- get_map(location = box, maptype = "terrain", source = "google", 
+               color = "color", zoom = 13, scale = 2)
+ggmap(map) + geom_point(aes(x = longitude, y = latitude), data=entries)
+
+# Write the longitude and latitude values to file
+write.csv(entries, file = paste("GeocoderResult_", startFile, "_", endFile, ".csv",
+                                sep = ""), row.names = FALSE)
+
+start
+date()
