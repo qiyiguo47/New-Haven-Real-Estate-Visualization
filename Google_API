@@ -106,3 +106,27 @@ write.csv(entries, file = paste("GeocoderResult_", startFile, "_", endFile, ".cs
 
 start
 date()
+
+
+# I finished this code to concatenate all the files for GoogleAPI result
+
+# Import all the geocoderResult files
+
+files <- dir("geocoderResult", full.names=TRUE)
+
+data <- read.csv(files[1], header = TRUE, sep=",")
+
+for (i in 2:length(files)) {
+  data <- rbind(data, read.csv(files[i], header = TRUE, sep=","))
+}
+
+# Sort the dataframe based on pid
+new_data <- data[order(data$pid),]
+
+
+# Remove the duplicate obs (there is one, because one teammate defined 
+# the starpid = 10000 instaed of 10001)
+new_data <- new_data[!duplicated(new_data$pid),]
+# new_data <- new_data[-which(new_data$pid == new_data$pid[duplicated(new_data$pid)])[2],]  
+
+write.csv(new_data, file = "allresults", row.names = FALSE)
