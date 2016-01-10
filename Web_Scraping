@@ -1,0 +1,35 @@
+# In this part, I scaped the address information about New Haven real estate proporties from website.
+
+# Setting Working Directory in my Mac
+setwd("/Users/tianjiachen/Desktop/case studies/Y15_W1/newdata")
+
+# Set three variables in the data frame
+all_html <- 1:27307
+pid=rep(0, length(all_html))
+location=rep(0, length(all_html))
+totval=rep(0, length(all_html))
+
+# Get the pid, location and totval from all the webpages
+for (i in all_html) {
+  url <- paste(i, ".html", sep="")
+  try(x <- scan(url, what="", sep="\n"))
+  x <- gsub("<[^<>]*>", "", x)  
+  x <- gsub("\t", "", x, fixed=TRUE)
+  x <- gsub("  ", "", x, fixed=TRUE)        # Taking out unnecessary blanks while keeping the blanks in the location  
+  pos_Location <- grep("Location", x)       # Get position of key word "Location"
+  pos_PID <- grep("PID", x)
+  pos_Appraisal <- grep("Appraisal", x)
+  pid[i] <- as.numeric(x[pos_PID+2])
+  location[i] <- x[pos_Location+2]
+  totval[i] <- as.numeric(gsub(",", "", substr(x[pos_Appraisal[1]+2],2,nchar(x[pos_Appraisal[1]+2])), fixed=TRUE))
+}
+
+# Put the result into data frame
+result <- data.frame(pid=pid,
+                     location=location,
+                     totval=totval,
+                     stringsAsFactors=FALSE)
+result <- unique(result)
+
+# Write data to .csv
+write.csv(result, "newhavendata.csv", row.names=FALSE)
